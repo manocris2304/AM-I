@@ -1,0 +1,186 @@
+import sympy as sp
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.linalg import eigh
+
+def ler_matriz_abaqus(arquivo_mtx, ndof_por_no):
+
+    entradas = []
+    max_node = 0
+
+    with open(arquivo_mtx, 'r') as f:
+        for line in f:
+
+            line = line.strip()
+
+            if not line:
+                continue
+
+            parts = line.split(',')
+
+            if len(parts) < 5:
+                continue
+
+            node_i = int(parts[0])
+            dof_i  = int(parts[1])
+            node_j = int(parts[2])
+            dof_j  = int(parts[3])
+            value  = float(parts[4])
+
+            entradas.append((node_i, dof_i, node_j, dof_j, value))
+
+            max_node = max(max_node, node_i, node_j)
+
+    n_dof_total = max_node * ndof_por_no
+
+    K = np.zeros((n_dof_total, n_dof_total))
+
+    for node_i, dof_i, node_j, dof_j, value in entradas:
+
+        row = (node_i - 1) * ndof_por_no + (dof_i - 1)
+        col = (node_j - 1) * ndof_por_no + (dof_j - 1)
+
+        K[row, col] = value
+
+    return K
+
+
+def converter_nos_para_gdl(master_nodes, ndof_por_no=6):
+
+    mestre = []
+
+    for node in master_nodes:
+        for dof in range(ndof_por_no):
+
+            gdof = (node - 1) * ndof_por_no + dof + 1
+            mestre.append(gdof)
+
+    return mestre
+
+
+def modal (K, M):
+    autovalores, autovetores = eigh(K, M)
+    autovalores = np.real(autovalores)
+    return autovalores
+
+
+def guyan (Kg, Mg, n_dof, mestre):
+
+    mestre = np.array(mestre)-1 #O índice nessa linguagem de programação começa em 0
+    gdl = np.arange(n_dof)  #Cria um vetor com todos os gdls
+    slave = np.delete(gdl, mestre) #Exclui os elementos mestres do vetor de elementos escravos
+    
+    K_mm = Kg[np.ix_(mestre, mestre)] #Cria matriz de rigidez apenas com elementos mestres (ativos)
+    M_mm = Mg[np.ix_(mestre, mestre)]#Cria matriz de massa apenas com elementos mestres (ativos)
+    K_ss = Kg[np.ix_(slave, slave)] #Cria matriz de rigidez apenas com elementos escravos (deletados)
+    M_ss = Mg[np.ix_(slave, slave)] #Cria matriz de massa apenas com elementos mestres (deletados)
+    K_ms = Kg[np.ix_(mestre, slave)]
+    K_sm= np.transpose(K_ms)
+    M_ms = Mg[np.ix_(mestre, slave)]
+    M_sm = np.transpose(M_ms)
+
+    K_guyan = np.block([[K_mm, K_ms], [K_sm, K_ss]])
+    M_guyan = np.block([[M_mm, M_ms], [M_sm, M_ss]])
+
+    ts= -np.linalg.inv(K_ss)@K_sm
+
+    I = np.eye(ts.shape[1])
+    Ts = np.vstack((I, ts))
+    Kr = np.transpose(Ts)@K_guyan@Ts
+    Mr = np.transpose(Ts)@M_guyan@Ts
+
+    return Kr, Mr
+
+# ============================================================
+# REDUÇÃO SEREP
+# ============================================================
+
+def SEREP (Kg, Mg, n_dof, mestre):
+
+    mestre = np.array(mestre)-1
+    gdl = np.arange(n_dof)  
+    slave = np.delete(gdl, mestre) 
+   
+    K_mm = Kg[np.ix_(mestre, mestre)] 
+    M_mm = Mg[np.ix_(mestre, mestre)]
+    K_ss = Kg[np.ix_(slave, slave)] 
+    M_ss = Mg[np.ix_(slave, slave)] 
+    K_ms = Kg[np.ix_(mestre, slave)]
+    K_sm= np.transpose(K_ms)
+    M_ms = Mg[np.ix_(mestre, slave)]
+    M_sm = np.transpose(M_ms)
+
+    K_serep = np.block([[K_mm, K_ms], [K_sm, K_ss]])
+    M_serep = np.block([[M_mm, M_ms], [M_sm, M_ss]])
+
+    n_modos = len(mestre)
+
+    autovalor, PHI = eigh(Kg, Mg)
+
+    PHI = PHI [:, :n_modos]
+    PHI_m = PHI[mestre, :]
+    PHI_s = PHI[slave, :]
+    
+    ts = PHI_s@np.linalg.pinv(PHI_m)
+    I=np.eye(ts.shape[1])
+    Ts=np.vstack((I,ts))
+    Kr=np.transpose(Ts)@K_serep@Ts
+    Mr=np.transpose(Ts)@M_serep@Ts
+
+    return Kr, Mr
+
+# Número de GDL por nó
+ndof_por_no = 6
+
+# Arquivos exportados do Abaqus
+arquivo_K = '2_5_STIF1_label.mtx'
+arquivo_M = '2_5_MASS1_label.mtx'
+
+# Lendo matrizes
+Kg = ler_matriz_abaqus(arquivo_K, ndof_por_no)
+Mg = ler_matriz_abaqus(arquivo_M, ndof_por_no)
+
+
+# Escolha apenas os NÓS
+n_nos = Kg.shape[0] // ndof_por_no
+n_mestre = list(range(1,n_nos+ 1, 10))
+
+# Conversão automática para TODOS os GDLs do nó
+mestre = converter_nos_para_gdl(n_mestre, ndof_por_no)
+
+print('GDLs mestres utilizados:')
+print(mestre)
+
+
+# REDUÇÃO
+n_dof = Kg.shape[0]
+Kr_guyan, Mr_guyan = guyan(Kg, Mg, n_dof, mestre)
+Kr_serep, Mr_serep = SEREP(Kg, Mg, n_dof, mestre)
+
+
+# FREQUÊNCIAS NATURAIS
+fn_mestre = np.sqrt(modal(Kg, Mg))
+fn_guyan = np.sqrt(modal(Kr_guyan, Mr_guyan))
+fn_serep = np.sqrt(modal(Kr_serep, Mr_serep))
+
+print ('Frequencias naturais do modelo completo:\n', fn_mestre)
+print ('Frequencias naturais por Guyan:\n', fn_guyan)
+print ('Frequencias naturais por SEREP:\n', fn_serep)
+
+
+# RESULTADOS
+print ('\nMatriz reduzida Guyan:\n')
+print (np.round(Kr_guyan, 4), '\n')
+print (np.round(Mr_guyan, 4))
+
+print ('\nMatriz reduzida SEREP:\n')
+print (np.round(Kr_serep, 4), '\n')
+print (np.round(Mr_serep, 4))
+
+np.savetxt('Kr_guyan.txt', Kr_guyan)
+np.savetxt('Mr_guyan.txt', Mr_guyan)
+
+np.savetxt('Kr_serep.txt', Kr_serep)
+np.savetxt('Mr_serep.txt', Mr_serep)
+
+
