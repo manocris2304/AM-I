@@ -46,7 +46,7 @@ def SEREP (Kg, Mg, n_dof, mestre):
     M_mm = Mg[np.ix_(mestre, mestre)]#Cria matriz de massa apenas com elementos mestres (ativos)
 
     K_ss = Kg[np.ix_(slave, slave)] #Cria matriz de rigidez apenas com elementos escravos (deletados)
-    M_ss = Mg[np.ix_(slave, slave)] #Cria matriz de massa apenas com elementos mestres (deletados)
+    M_ss = Mg[np.ix_(slave, slave)] #Cria matriz de massa apenas com elementos mestres (deletados) crispim broxa
     
     K_ms = Kg[np.ix_(mestre, slave)]
     K_sm= np.transpose(K_ms)
