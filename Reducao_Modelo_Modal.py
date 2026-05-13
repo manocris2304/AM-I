@@ -3,6 +3,61 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 
+def ler_matriz_abaqus(arquivo_mtx, ndof_por_no):
+
+    entradas = []
+    max_node = 0
+
+    with open(arquivo_mtx, 'r') as f:
+
+        for line in f:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            parts = line.split(',')
+
+            if len(parts) < 5:
+                continue
+
+            try:
+
+                node_i = int(parts[0])
+                dof_i = int(parts[1])
+
+                node_j = int(parts[2])
+                dof_j = int(parts[3])
+
+                value = float(parts[4])
+
+                entradas.append((node_i,dof_i,node_j,dof_j,value))
+                max_node = max(max_node, node_i, node_j)
+            except:
+                continue
+    n_dof_total = max_node * ndof_por_no
+
+    K = np.zeros((n_dof_total, n_dof_total))
+
+    for node_i, dof_i, node_j, dof_j, value in entradas:
+        row = ((node_i - 1) * ndof_por_no + (dof_i - 1))
+        col = ((node_j - 1) * ndof_por_no + (dof_j - 1))
+        K[row, col] += value
+
+    K = 0.5 * (K + K.T)
+
+    return K
+
+def converter_nos_para_gdl(master_nodes, ndof_por_no):
+    mestre = []
+    for node in master_nodes:
+        for dof in range(ndof_por_no):
+
+            gdof = (node - 1) * ndof_por_no + dof + 1
+            mestre.append(gdof)
+
+    return mestre
+
 def modal (K, M):
     autovalores, autovetores = eigh(K, M)
     autovalores = np.real(autovalores)
@@ -56,7 +111,7 @@ def SEREP (Kg, Mg, n_dof, mestre):
     K_serep = np.block([[K_mm, K_ms], [K_sm, K_ss]])
     M_serep = np.block([[M_mm, M_ms], [M_sm, M_ss]])
 
-    n_modos = len(mestre)
+    n_modos = min(4, len(mestre))
     autovalor, PHI = eigh(Kg, Mg)
     PHI = PHI [:, :n_modos]
     PHI_m = PHI[mestre, :]
@@ -71,29 +126,32 @@ def SEREP (Kg, Mg, n_dof, mestre):
 
     return Kr, Mr
 
+ndof_por_no = 6
 
-Kg = np.array ([[10, -2, 0, 0, 0], [-2, 8, -1, 0, 0], [0, -1, 6, -1, 0], [0, 0, -1, 4, -1], [0, 0, 0, -1, 2]])
-Mg = np.array ([[10, -2, 0, 0, 0], [-2, 8, -1, 0, 0], [0, -1, 6, -1, 0], [0, 0, -1, 4, -1], [0, 0, 0, -1, 2]])
+Kg = ler_matriz_abaqus('2_5_STIF1_label.mtx', ndof_por_no)
+Mg =  ler_matriz_abaqus('2_5_MASS1_label.mtx', ndof_por_no)
 n_dof = Kg.shape[0]
-mestre = [1, 3]
+no_mestre = [1, 10, 25, 50, 100, 125, 150, 200]
+
+mestre = converter_nos_para_gdl(no_mestre, ndof_por_no)
+
+K_mestre = Kg [np.ix_(mestre, mestre)] #Cria matriz de rigidez apenas com elementos mestres (ativos)
+M_mestre = Mg [np.ix_(mestre, mestre)]
 
 Kr_guyan, Mr_guyan = guyan(Kg, Mg, n_dof, mestre)
-
 Kr_serep, Mr_serep = SEREP(Kg, Mg, n_dof, mestre)
 
 #Calculando as frequências naturais de acordo com cada método
 
-fn_mestre = np.sqrt(modal(Kg, Mg))
-fn_guyan = np.sqrt(modal(Kr_guyan, Mr_guyan))
-fn_serep = np.sqrt(modal(Kr_serep, Mr_serep))
+fn_mestre = np.sqrt(modal(K_mestre, M_mestre))/(2*np.pi)
+fn_guyan = np.sqrt(modal(Kr_guyan, Mr_guyan)) /(2*np.pi)
+fn_serep = np.sqrt(modal(Kr_serep, Mr_serep)) /(2*np.pi)
 
-print ('Frequencias naturais dos gdl mestres:\n', fn_mestre)
-print ('Frequencias naturais por Guyan:\n', fn_guyan)
-print ('Frequencias naturais por SEREP:\n', fn_serep)
+print ('Frequencias naturais dos gdl mestres [Hz]:\n \n', fn_mestre)
+print ('\nFrequencias naturais por Guyan [Hz]:\n \n', fn_guyan)
+print ('\nFrequencias naturais por SEREP[Hz]:\n \n', fn_serep)
 
 
-print (np.round(Kr_guyan, 4), '\n', np.round(Mr_guyan, 4))
-print (np.round(Kr_serep, 4), '\n', np.round(Mr_serep, 4))
 
 
 
