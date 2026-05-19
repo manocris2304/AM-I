@@ -182,7 +182,7 @@ def SEREP (Kg, Mg, n_dof, mestre, n_modos):
 # Calculo de convergência de Guyan e SEREP
 convergencia_Guyan = []
 convergencia_SEREP = []
-for i in range(95, 98, 1):
+for i in range(5, 105, 10):
     p_reducao = i
     j=i/10-1
     master_dofs = selecionar_mestres(num_linhas, dof_per_node, p_reducao) 
