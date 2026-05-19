@@ -37,7 +37,7 @@ def ler_matriz_abaqus(arquivo_mtx, ndof_por_no):
                 continue
     n_dof_total = max_node * ndof_por_no
 
-    K = np.zeros((n_dof_total, n_dof_total))
+    K = np.zeros((n_dof_total + 1, n_dof_total + 1))
 
     for node_i, dof_i, node_j, dof_j, value in entradas:
         row = ((node_i - 1) * ndof_por_no + (dof_i - 1))
@@ -128,10 +128,10 @@ def SEREP (Kg, Mg, n_dof, mestre):
 
 ndof_por_no = 6
 
-Kg = ler_matriz_abaqus('2_5_STIF1_label.mtx', ndof_por_no)
-Mg =  ler_matriz_abaqus('2_5_MASS1_label.mtx', ndof_por_no)
+Kg = ler_matriz_abaqus('10_STIF1_label.mtx', ndof_por_no)
+Mg =  ler_matriz_abaqus('10_MASS1_label.mtx', ndof_por_no)
 n_dof = Kg.shape[0]
-no_mestre = [1, 10, 25, 50, 100, 125, 150, 200]
+no_mestre = [1, 20, 30, 40, 51]
 
 mestre = converter_nos_para_gdl(no_mestre, ndof_por_no)
 
